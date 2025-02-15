@@ -95,31 +95,6 @@ rdpEnqueueKey(DeviceIntPtr device, int type, int scancode)
     }
 }
 
-/******************************************************************************/
-static void
-sendDownUpKeyEvent(DeviceIntPtr device, int type, int x_scancode)
-{
-    /* need this cause rdp and X11 repeats are different */
-    /* if type is keydown, send keyup + keydown */
-    if (type == KeyPress)
-    {
-        rdpEnqueueKey(device, KeyRelease, x_scancode);
-        rdpEnqueueKey(device, KeyPress, x_scancode);
-    }
-    else
-    {
-        rdpEnqueueKey(device, KeyRelease, x_scancode);
-    }
-}
-
-/******************************************************************************/
-static void
-check_keysa(rdpKeyboard *keyboard)
-{
-    // Terminate any pause sequence in progress
-    keyboard->skip_numlock = 0;
-}
-
 /**
  * @param down   - true for KeyDown events, false otherwise
  * @param param1 - X11 keycode of pressed key
@@ -140,89 +115,7 @@ KbdAddEvent(rdpKeyboard *keyboard, int down, int param1, int param2,
            down, rdp_scancode,
            param3, param4, x_keycode));
 
-    if (keyboard->skip_numlock)
-    {
-        keyboard->skip_numlock = 0;
-        if (rdp_scancode == SCANCODE_NUMLOCK_KEY)
-        {
-            return;
-        }
-    }
-    switch (rdp_scancode)
-    {
-        /* Non-repeating keys
-         *
-         * From Windows, these repeat anyway, so if the left-shift is
-         * held down we get a stream of LeftShift KeyPress events. We just
-         * pass these on to the X server to make sense of them */
-        case SCANCODE_LSHIFT_KEY:
-        case SCANCODE_RSHIFT_KEY:
-        case SCANCODE_LCTRL_KEY:
-        case SCANCODE_RCTRL_KEY:
-        case SCANCODE_LALT_KEY:
-        case SCANCODE_RALT_KEY:
-        case SCANCODE_CAPS_KEY:
-        case SCANCODE_NUMLOCK_KEY:
-        case SCANCODE_LWIN_KEY:
-        case SCANCODE_RWIN_KEY:
-        case SCANCODE_MENU_KEY:
-            rdpEnqueueKey(keyboard->device, type, x_keycode);
-            break;
-
-        case SCANCODE_SCROLL_KEY:
-            // Scroll lock is also non-repeating, but we need to keep
-            // track of the key state to handle a TS_SYNC_EVENT from
-            // the client.
-            if (type == KeyPress)
-            {
-                if (keyboard->scroll_lock_down)
-                {
-                    // Key already down - ignore this one.
-                }
-                else
-                {
-                    // Debounced keypress
-                    keyboard->scroll_lock_down = 1;
-                    keyboard->scroll_lock_state = !keyboard->scroll_lock_state;
-                }
-            }
-            else
-            {
-                keyboard->scroll_lock_down = 0;
-            }
-            rdpEnqueueKey(keyboard->device, type, x_keycode);
-            break;
-
-        case SCANCODE_TAB_KEY:
-            if (!down && !keyboard->tab_down)
-            {
-                /* mstsc.exe sends a tab up before and after a TS_SYNC_EVENT */
-                check_keysa(keyboard);
-            }
-            else
-            {
-                sendDownUpKeyEvent(keyboard->device, type, x_keycode);
-            }
-
-            keyboard->tab_down = down;
-            break;
-
-        case SCANCODE_PAUSE_KEY:
-            /* The pause key (0xE1 0x1D from the keyboard controller)
-             * is mapped to a combination of ctrl and numlock events -
-             * see [MS-RDPBCGR] 2.2.8.1.1.3.1.1.1 for details */
-            rdpEnqueueKey(keyboard->device, type, x_keycode);
-            keyboard->skip_numlock = 1;
-            break;
-
-        default:
-            if (x_keycode > 0)
-            {
-                sendDownUpKeyEvent(keyboard->device, type, x_keycode);
-            }
-
-            break;
-    }
+    rdpEnqueueKey(keyboard->device, type, x_keycode);
 }
 
 /******************************************************************************/
